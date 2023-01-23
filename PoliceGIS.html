@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"
+    integrity="sha512-xodZBNTC5n17Xt2atTPuE1HxjVMSvLVW9ocqUKLsCC5CXdbqCmblAshOMAS6/keqq/sMZMZ19scR4PsZChSR7A=="
+    crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"
+    integrity="sha512-XQoYMqMTK8LvdxXYG3nZ448hOEQiglfqkJs1NOQV44cWnUrBc8PkAOcXy20w0vlaXaVUearIOBhiXZ5V3ynxwA=="
+    crossorigin=""></script>
+  <script type="text/javascript" src="https://code.jquery.com/jquery-1.7.1.min.js"></script>
+  <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/1.4.0/proj4.js"></script>
+  <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/rxjs/8.0.0-alpha.0/rxjs.umd.js"></script>
+  <style>
+    html,
+    body {
+      height: 100%;
+      margin: 0;
+    }
+
+    .leaflet-container {
+      height: 840px;
+      width: 1400px;
+      max-width: 100%;
+      max-height: 100%;
+    }
+
+    .insert-container {
+      position: absolute;
+      top: 0;
+      left: 50%;
+      background-color: aliceblue;
+      z-index: 400;
+      padding: 0.3em;
+    }
+  </style>
+</head>
+
+<body>
+  <h1 style = "text-align: center; text-decoration: underline; background-color: #D3D3D3; padding: 7px;">*Police GIS*</h1>
+  <div style="display: flex">
+    <div id="map"></div>
+  <div style="border-style: groove; margin-left: 7px;">    
+    <div style="padding: 5pt;">
+        <div style="padding: 5pt;">
+            <button onclick="toggleInsertMode()" id="insertToggle" style="width: 441px;">Kliknite pregledate mesta...</button>
+        </div>
+        <div style="border-style: groove">
+            <div style="padding: 5pt;">
+            <input type="radio" id="amenity1"
+                    name="amenity" value="traffic_light">
+            <label for="amenity1">Semafori</label>
+            <input type="radio" id="amenity2"
+                    name="amenity" value="speed_control_camera" style="margin-left: 70px;">
+            <label for="amenity2" >Radar za brzinu</label>
+            <input type="radio" id="amenity3"
+                    name="amenity" value="police_patrol" style="margin-left: 20px;">
+            <label for="amenity3">Policijska patrola</label>
+            <br>
+            <div style="margin-top: 5px;">
+            <input type="radio" id="amenity4"
+                    name="amenity" value="parking_lot">
+            <label for="amenity4">Parkiraliste</label>
+            <input type="radio" id="amenity5"
+                    name="amenity" value="speed_bumper" style="margin-left: 57px;">
+            <label for="amenity5">Lezeci policajci</label>
+            </div>
+            </div>
+            <div style="padding: 5pt;">
+            <input type="text" id="insertInput" placeholder="Name..."  style="width: 155px;"/>
+            <button onclick="insertNewTrafficAmenity()" style="margin-left: 5px; width: 186px">Dodaj novi marker</button>
+            </div>
+        </div>
+        <div style="border-style: groove; margin-top: 5px; margin-bottom: 5px;">
+            <div style="padding: 5pt;">
+            <input type="text" id="filterInput" placeholder="Filter..." style="width: 155px;"/>
+            <button onclick="filterAmenity()" style="width: 186px; margin-left: 5px;">Filtriraj markere po imenu</button>
+            <button onclick="clearNameFilter()" style="margin-left: 45px;">X</button>
+            </div>
+            <div style="padding: 5pt;">
+            <input type="number" id="distanceInput" placeholder="Distance..." style="width: 155px;"/>
+            <button onclick="filterByDistanceAmenity()" style="margin-left: 5px;">Filtriraj u odnosu na distancu</button>
+            <button onclick="clearNameFilter()" style="margin-left: 45px;">X</button>
+            </div>
+        </div>
+        <div style="border-style: groove">
+            <div style="padding: 5pt;">
+                <label for="start">Start datum:</label>
+                <input type="date" id="startDatum" name="trip-start"
+                    value="2012-10-01"
+                    min="2012-10-01" max="2014-10-01">
+
+                <label for="appt" style="margin-left: 22px;">Start vreme:</label>
+                <input type="time" id="startVreme" name="appt" value="07:00">
+            </div>
+            <div style="padding: 5pt;">
+                <label for="start">Kraj datum:</label>
+                <input type="date" id="krajDatum" name="trip-start"
+                    value="2014-10-01"
+                    min="2012-10-01" max="2014-10-01">
+
+                <label for="appt" style="margin-left: 25px;">Kraj vreme:</label>
+                <input type="time" id="krajVreme" name="appt" value="07:00">
+            </div>
+            <div style="padding: 5pt;">
+                <button onclick="filterViolentDriving()" style="width: 400px;">Filtriraj nasilnicku voznju</button>
+                <button onclick="clearViolentFilter()" style="margin-left: 5px;">X</button>
+            </div>
+        </div>        
+    </div>
+  </div>
+  </div>
+  <h3 style = "text-align: center; text-decoration: underline; background-color: #D3D3D3; padding: 3px;">Lako i jednostavno pratite policijsku situaciju na terenu, kao i prekoracenja brzina vozila na putu u naseljenim mestima.</h3>
+
+  <script type="text/javascript">
+    const mapTilerToken = 'https://api.maptiler.com/maps/topo/{z}/{x}/{y}.png?key=90RVzabwVf6oCi81Oo0m';
+    const mapTilerAttribution = '<a href="https://www.maptiler.com/copyright/" target="_blank">&copy; MapTiler</a> <a href="https://www.openstreetmap.org/copyright" target="_blank">&copy; OpenStreetMap contributors</a>';
+    const serverBaseUrl = 'http://192.168.0.15:8085/geoserver/serbia';
+    const layer = {
+      point: 'serbia:planet_osm_point',
+      point4326: 'serbia:planet_osm_point_new',
+      datapoint: 'serbia:planet_osm_datapoint',
+      roads: 'serbia:planet_osm_roads_new',
+      polygon: 'serbia:planet_osm_polygon',
+      polygon4326: 'serbia:planet_osm_polygon_new',
+      line: 'serbia:planet_osm_line_new',
+      pointLine: 'serbia:SerbiaMap'
+    }
+    const icons = {
+      semafor: L.icon({
+            iconUrl: 'traffic-lights.png',
+            //shadowUrl: 'http://leafletjs.com/examples/custom-icons/leaf-shadow.png',
+            iconSize: [35, 35]
+        }),
+      kamera: L.icon({
+            iconUrl: 'speed-camera.png',
+            //shadowUrl: 'http://leafletjs.com/examples/custom-icons/leaf-shadow.png',
+            iconSize: [35, 35]
+        }),
+      patrola: L.icon({
+            iconUrl: 'police.png',
+            //shadowUrl: 'http://leafletjs.com/examples/custom-icons/leaf-shadow.png',
+            iconSize: [35, 35]
+        }),
+      parking: L.icon({
+            iconUrl: 'parking-area.png',
+            //shadowUrl: 'http://leafletjs.com/examples/custom-icons/leaf-shadow.png',
+            iconSize: [35, 35]
+        }),
+      lezeci: L.icon({
+            iconUrl: 'speed-bump.png',
+            //shadowUrl: 'http://leafletjs.com/examples/custom-icons/leaf-shadow.png',
+            iconSize: [35, 35]
+      }),
+      policijskaStanica: L.icon({
+            iconUrl: 'police-station.png',
+            //shadowUrl: 'http://leafletjs.com/examples/custom-icons/leaf-shadow.png',
+            iconSize: [35, 35]
+      }),
+      ogranicenje: L.icon({
+            iconUrl: 'speed-limit.png',
+            //shadowUrl: 'http://leafletjs.com/examples/custom-icons/leaf-shadow.png',
+            iconSize: [35, 35]
+      })
+    };
+    var map = initMap();
+
+    var theCurrentLoc = {};
+
+    var policeStations;
+    var cities;
+    var areas;
+    var rushRoads;
+    var violentPoints;
+    var andjelas;
+
+    var trafficLights;
+    var speedCameras;
+    var policePatrols;
+    var parkingLots;
+    var speedBumpers;
+
+    var layerControls;
+
+    var isInsertMode = false;
+    var pointClickedEvent = null;
+
+    addControls();
+
+    createAmenityLayer(trafficLights, 'traffic_light', 'Semafori').then(a => {
+      trafficLights = a;
+    })
+    createAmenityLayer(speedCameras, 'speed_control_camera', 'Merenje brzine').then(a => {
+      speedCameras = a;
+    })
+    createAmenityLayer(policePatrols, 'police_patrol', 'Policijske kontrole').then(a => {
+      policePatrols = a;
+    })
+    createAmenityLayer(parkingLots, 'parking_lot', 'Parkinzi').then(a => {
+      parkingLots = a;
+    })
+    createAmenityLayer(speedBumpers, 'speed_bumper', 'Lezeci policajci').then(a => {
+      speedBumpers = a;
+    })
+
+    createPoliceStationsLayer().then(a => {
+      layerControls.addOverlay(policeStations, 'Policijske Stanice');
+    })
+    createCitiesLayer().then(a => {
+      layerControls.addOverlay(cities, 'Gradovi');
+    })
+    createPoliceCitiesLayer().then(a => {
+      layerControls.addOverlay(areas, 'Gradovi sa policijskim stanicama');
+    })
+    createRushLayer().then(a => {
+      layerControls.addOverlay(rushRoads, 'Putevi sa brzom voznjom');
+    })
+    createViolentDrivingLayer().then(a => {
+        violentPoints = a;
+    })
+
+    function toggleInsertMode() {
+      isInsertMode = !isInsertMode;
+      if(isInsertMode == true){
+        document.getElementById("insertToggle").innerHTML = "Kliknite da selektujete koordinate...";
+      } else {
+        removeCurrMarker();
+        document.getElementById("insertToggle").innerHTML = "Kliknite pregledate mesta...";
+      }
+    }
+
+    function onMapClicked(e) {
+      if (isInsertMode) {
+        pointClickedEvent = e;
+        addCurrLocMarker(e);
+      } else {
+        getFeatureInfo(e);
+      }
+    }
+
+    function addCurrLocMarker(e){
+        lat = e.latlng.lat;
+        lon = e.latlng.lng;
+        removeCurrMarker();
+        theCurrentLoc = L.marker([lat,lon]).addTo(map); 
+    }
+
+    function removeCurrMarker(){
+        if (theCurrentLoc != undefined) {
+              map.removeLayer(theCurrentLoc);
+        };
+    }
+
+    function getFeatureInfo(e) {
+      var sw = map.options.crs.project(map.getBounds().getSouthWest());
+      var ne = map.options.crs.project(map.getBounds().getNorthEast());
+      var BBOX = sw.x + "," + sw.y + "," + ne.x + "," + ne.y;
+      var WIDTH = map.getSize().x;
+      var HEIGHT = map.getSize().y;
+
+      var X = Math.trunc(map.layerPointToContainerPoint(e.layerPoint).x);
+      var Y = Math.trunc(map.layerPointToContainerPoint(e.layerPoint).y);
+
+      var URL = `${serverBaseUrl}/wms?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetFeatureInfo&LAYERS=${layer.point}&QUERY_LAYERS=${layer.point}&BBOX=`
+        + `${BBOX}&FEATURE_COUNT=1&HEIGHT=${HEIGHT}&WIDTH=${WIDTH}&INFO_FORMAT=application/json&TILED=false&CRS=EPSG:3857&I=${X}&J=${Y}`;
+
+      callApiAndSetLayer(URL, e.latlng, presentFeaturePopup, "");
+    }
+
+    function initMap() {
+      let map = L.map('map')
+        .setView([44, 21], 7);
+      L.tileLayer('https://api.maptiler.com/maps/basic/{z}/{x}/{y}.png?key=5l7zynRL91qC3yKajzKP', {
+        attribution: '<a href="https://www.maptiler.com/copyright/" target="_blank">&copy; MapTiler</a> <a href="https://www.openstreetmap.org/copyright" target="_blank">&copy; OpenStreetMap contributors</a>',
+        maxZoom: 18,
+        id: 'mapbox/streets-v11',
+        tileSize: 512,
+        zoomOffset: -1,
+        accessToken: 'your.mapbox.access.token'
+    }).addTo(map);
+      map.on('click', onMapClicked);
+      return map;
+    }
+
+    function addControls() {
+      var basemaps = {
+        Lokacije: L.tileLayer.wms(serverBaseUrl + '/wms', {
+          layers: layer.point,
+          format: 'image/png',
+          transparent: true
+        }),
+        Linije: L.tileLayer.wms(serverBaseUrl + '/wms', {
+          layers: layer.line,
+          format: 'image/png',
+          transparent: true
+        }),
+        Putevi: L.tileLayer.wms(serverBaseUrl + '/wms', {
+          layers: layer.roads,
+          format: 'image/png',
+          transparent: true
+        }),
+        Oblasti: L.tileLayer.wms(serverBaseUrl + '/wms', {
+          layers: layer.polygon,
+          format: 'image/png',
+          transparent: true
+        }),
+        Rute: L.tileLayer.wms(serverBaseUrl + '/wms', {
+          layers: layer.datapoint,
+          format: 'image/png',
+          transparent: true
+        }),
+        "Lokacije i linije": L.tileLayer.wms(serverBaseUrl + '/wms', {
+          layers: layer.pointLine,
+          format: 'image/png',
+          transparent: true
+        }),
+      };
+      layerControls = L.control.layers({}, basemaps, { collapsed: true, autoZIndex: false }).addTo(map);
+      if (basemaps.Topography) {
+        basemaps.Topography.addTo(map);
+      }
+    }
+
+    function clearNameFilter(){
+      var type = document.querySelector('input[name=amenity]:checked').value;
+      if(!type){
+        console.log('AAAA');
+        return;
+      }
+      populateFilterAmenities(type);
+      document.getElementById('filterInput').value = "";
+    }
+
+    function clearViolentFilter(){
+        document.getElementById('startDatum').value = "2012-10-01";
+        document.getElementById('krajDatum').value = "2014-10-01";
+        document.getElementById('startVreme').value = "07:00";
+        document.getElementById('krajVreme').value = "07:00";
+        filterViolentDriving();
+    }
+
+    function createPoliceStationsLayer() {
+      return new Promise((resolve, reject) => {
+        let unisUrl = `${serverBaseUrl}/wfs?service=wfs&version=1.1.0&request=GetFeature&typename=${layer.point4326}&outputformat=json&cql_filter=amenity='police'&CRS=EPSG:4326`;
+        callApiAndSetLayer(unisUrl, null, function (data) {
+          if (data && data.features) {
+            var uni = data.features.map(feature =>
+              markFeature([feature.geometry.coordinates[1], feature.geometry.coordinates[0]], feature.properties.name,  'police_station')
+            );
+            policeStations = L.layerGroup(uni);
+            resolve();
+          }
+        }, 'police_station')
+      });
+    }
+
+    function createAmenityLayer(amenities, type, name){
+      createAmenityLayer(amenities, type, name, null);
+    }
+
+    function createAmenityLayer(amenities, type, name, filter){
+      createAmenityLayer(amenities, type, name, filter, null);
+    }
+
+    function createAmenityLayer(amenities, type, name, filter, distance) {
+      return new Promise((resolve, reject) => {
+        let unisUrl;
+        if(distance && pointClickedEvent){  
+          var metersDistance = distance * 1000;
+          var point = L.marker(pointClickedEvent.latlng);
+          var querry = 'dwithin(way, Point(' +  point.getLatLng().lat + ' ' + point.getLatLng().lng + '), '+ metersDistance + ', meters)';
+          console.log(querry);
+          unisUrl = `${serverBaseUrl}/wfs?service=wfs&version=1.1.0&request=GetFeature&typename=${layer.point4326}&outputformat=json&cql_filter=amenity='${type}' and ${querry} &CRS=EPSG:4326`;                
+        } else if (!filter){
+          unisUrl = `${serverBaseUrl}/wfs?service=wfs&version=1.1.0&request=GetFeature&typename=${layer.point4326}&outputformat=json&cql_filter=amenity='${type}'&CRS=EPSG:4326`;
+        } else {
+          unisUrl = `${serverBaseUrl}/wfs?service=wfs&version=1.1.0&request=GetFeature&typename=${layer.point4326}&outputformat=json&cql_filter=amenity='${type}' and name='${filter}'&CRS=EPSG:4326`;
+        }
+        let t = type;
+        callApiAndSetLayer(unisUrl, null, function (data, latlng, tt) {
+          if (data && data.features) {
+            var uni = data.features.map(feature =>              
+              markFeature([feature.geometry.coordinates[1], feature.geometry.coordinates[0]], feature.properties.name, tt)           
+            );
+            var flag = false;
+            if(amenities){
+              layerControls.removeLayer(amenities);
+              flag = true;
+            }
+
+            amenities = L.layerGroup(uni);
+            
+            if(flag == true){
+              map.eachLayer((layer) => {
+                if(layer['_latlng']!=undefined)
+                layer.remove();
+              })
+              amenities.addTo(map);
+            }
+            layerControls.addOverlay(amenities, name);
+            resolve(amenities);
+          }
+        }, t)
+      });
+    }
+
+    function createCitiesLayer() {
+      return new Promise((resolve, reject) => {
+        let cityUrl = `${serverBaseUrl}/wfs?service=wfs&version=1.1.0&request=GetFeature&typename=${layer.point4326}&outputformat=json&cql_filter=place='city' and population>0&CRS=EPSG:4326`;
+        callApiAndSetLayer(cityUrl, null, function (data) {
+          if (data && data.features) {
+            var c = data.features.map(feature =>
+              circlePopup([feature.geometry.coordinates[1], feature.geometry.coordinates[0]], feature.properties.name, feature.properties.population)
+            );
+            cities = L.layerGroup(c);
+            resolve();
+          }
+        }, 'traffic_light')
+      });
+    }
+
+    function createRushLayer() {
+      return new Promise((resolve, reject) => {
+        let cityUrl = `${serverBaseUrl}/wfs?service=wfs&version=1.1.0&request=GetFeature&typename=${layer.roads}&outputformat=json&cql_filter=dwithin(way, collectGeometries(queryCollection('serbia:planet_osm_datapoint', 'way', 'speed > 120')), 1, meters)&CRS=EPSG:4326`;
+        callApiAndSetLayer(cityUrl, null, function (data) {
+          if (data && data.features) {
+            console.log(data);
+            var c = data.features.map(feature =>
+              L.polyline(feature.geometry.coordinates.map(c => [c[1], c[0]]), {color : 'green'})
+            )
+            rushRoads = L.layerGroup(c);
+
+            resolve();
+          }
+        }, 'traffic_light')
+      });
+    }
+
+    function createViolentDrivingLayer() {//kreni od 13. novembra 2012 u 4:21PM
+        var startDate = document.getElementById('startDatum').value;
+        var endDate = document.getElementById('krajDatum').value;
+        var startTime = document.getElementById('startVreme').value;
+        var endTime = document.getElementById('krajVreme').value;
+
+        const startDateTime = new Date(startDate + ' ' + startTime);
+        const endDateTime = new Date(endDate + ' ' + endTime);
+        return new Promise((resolve, reject) => {  
+            console.log(endDateTime.toISOString());   
+            var sDT = startDateTime.toISOString();
+            var eDT = endDateTime.toISOString();
+            let cityUrl = `${serverBaseUrl}/wfs?service=wfs&version=1.1.0&request=GetFeature&typename=${layer.point4326}&outputformat=json&cql_filter=amenity in ('school', 'driving_school', 'language_school') AND dwithin(way, collectGeometries(queryCollection('serbia:planet_osm_datapoint', 'way', 'speed > 45 and speed < 220 and dtime AFTER ${sDT} and dtime BEFORE ${eDT}')), 200, meters)&CRS=EPSG:4326`;        
+            callApiAndSetLayer(cityUrl, null, function (data, latlng, tt) {
+            if (data && data.features) {
+                var uni = data.features.map(feature =>              
+                markFeature([feature.geometry.coordinates[1], feature.geometry.coordinates[0]], feature.properties.name, tt)           
+                );
+                var flag = false;
+                if(violentPoints){
+                    layerControls.removeLayer(violentPoints);
+                    flag = true;
+                }
+                
+                violentPoints = L.layerGroup(uni);
+                
+                if(flag == true){
+                    map.eachLayer((layer) => {
+                        if(layer['_latlng']!=undefined)
+                        layer.remove();
+                    })
+                    violentPoints.addTo(map);
+                }
+                layerControls.addOverlay(violentPoints, 'Nasilnicka voznja');
+                resolve(violentPoints);
+            }
+            }, 'speed_limit')
+        });
+    }
+
+    function createPoliceCitiesLayer() {
+      return new Promise((resolve, reject) => {
+        let cityUrl = `${serverBaseUrl}/wfs?service=wfs&version=1.1.0&request=GetFeature&typename=${layer.polygon4326}&outputformat=json&cql_filter=place = 'city' AND dwithin(way, collectGeometries(queryCollection('serbia:planet_osm_point', 'way', 'amenity = ''police''')), 10, meters)&CRS=EPSG:4326`;        
+        callApiAndSetLayer(cityUrl, null, function (data) {
+          if (data && data.features) {
+            var c = data.features.map(feature =>
+              L.polygon(feature.geometry.coordinates[0].map(c => [c[1], c[0]]))
+                .bindPopup(`City: ${feature.properties.name}<br>Population: ${feature.properties.population}`).openPopup()
+            )
+            areas = L.layerGroup(c);
+
+            resolve();
+          }
+        }, 'traffic_light')
+      });
+    }
+
+    function insertNewTrafficAmenity(){
+     
+      var name = document.getElementById('insertInput').value;
+      var type = document.querySelector('input[name=amenity]:checked').value;
+      if(!name || !type || !pointClickedEvent){
+        console.log('AAAA');
+        return;
+      }
+      var point = L.marker(pointClickedEvent.latlng);
+      var postData =
+        '<wfs:Transaction\n'
+        + '  service="WFS"\n'
+        + '  version="1.1.0"\n'
+        + 'xmlns:serbia ="http://192.168.0.15:8080/geoserver/serbia"\n'
+        + `  xmlns:wfs="http://www.opengis.net/wfs"\n`
+        + `  xmlns:gml="http://www.opengis.net/gml"\n`
+        + `  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"\n`
+        + `   xsi:schemaLocation="http://www.opengis.net/wfs http://192.168.0.15:8085/geoserver/schemas/wfs/1.1.0/wfs.xsd\n`
+        + `                      http://192.168.0.15:8085/geoserver/serbia/wfs/DescribeFeatureType?typename=serbia:planet_osm_point">\n`
+        + '  <wfs:Insert>\n'
+        + '   <serbia:planet_osm_point>\n'
+        + `   <serbia:name>${name}</serbia:name>\n`
+        + `   <serbia:amenity>${type}</serbia:amenity>\n`
+        + '   <serbia:way>\n'
+        + '       <gml:Point srsName="http://www.opengis.net/gml/srs/epsg.xml#4326">\n'
+        + '            <gml:coordinates xmlns:gml="http://www.opengis.net/gml" decimal="." cs="," ts=" ">' + point.getLatLng().lng + ',' + point.getLatLng().lat + '</gml:coordinates>\n'
+        + '        </gml:Point>\n'
+        + '   </serbia:way>\n'
+        + '  </serbia:planet_osm_point>\n'
+        + '  </wfs:Insert>\n'
+        + '</wfs:Transaction>';
+
+      var wfsUrl = `${serverBaseUrl}/wfs`;
+      console.log(postData);
+      $.ajax({
+        type: "POST",
+        url: wfsUrl,
+        dataType: "xml",
+        contentType: "text/xml",
+        data: postData,
+        //TODO: Error handling
+        success: function (xml) {
+          console.log(xml);
+          //TODO: User feedback
+          console.log(type);
+          populateAmenities(type);
+        }
+      });
+    }
+
+    function filterAmenity(){
+        var filter = document.getElementById('filterInput').value;
+        var type = document.querySelector('input[name=amenity]:checked').value;
+        if(!filter || !type){
+            console.log('AAAA');
+            return;
+        } else {
+            populateFilterAmenities(type, filter);
+        }
+    }
+
+    function filterViolentDriving(){
+        createViolentDrivingLayer().then(a => {
+            violentPoints  = a;
+        });
+    }
+
+    function filterByDistanceAmenity(){
+        var distance = document.getElementById('distanceInput').value;
+        var type = document.querySelector('input[name=amenity]:checked').value;
+        if(!distance || !type){
+            console.log('AAAA');
+            return;
+        } else {
+            populateDistanceAmenities(type, distance);
+        }
+    }
+
+    function populateAmenities(type){
+      if(type == 'traffic_light'){
+            createAmenityLayer(trafficLights, 'traffic_light', 'Semafori').then(a => {
+              trafficLights = a;
+            });
+          } else if (type == 'speed_control_camera'){
+            createAmenityLayer(speedCameras, 'speed_control_camera', 'Merenje brzine').then(a => {
+              trafficLights = a;
+            });
+          } else if (type == 'police_patrol'){
+            createAmenityLayer(policePatrols, 'police_patrol', 'Policijske kontrole').then(a => {
+              policePatrols = a;
+            });
+          } else if (type == 'parking_lot'){
+            createAmenityLayer(parkingLots, 'parking_lot', 'Parkinzi').then(a => {
+              parkingLots = a;
+            });
+          } else if (type == 'speed_bumper'){
+            createAmenityLayer(speedBumpers, 'speed_bumper', 'Lezeci policajci').then(a => {
+              speedBumpers = a;
+            });
+          }
+    }
+
+    function populateFilterAmenities(type, filter){
+      if(type == 'traffic_light'){
+            createAmenityLayer(trafficLights, 'traffic_light', 'Semafori', filter).then(a => {
+              trafficLights = a;
+            });
+          } else if (type == 'speed_control_camera'){
+            createAmenityLayer(speedCameras, 'speed_control_camera', 'Merenje brzine', filter).then(a => {
+              trafficLights = a;
+            });
+          } else if (type == 'police_patrol'){
+            createAmenityLayer(policePatrols, 'police_patrol', 'Policijske kontrole', filter).then(a => {
+              policePatrols = a;
+            });
+          } else if (type == 'parking_lot'){
+            createAmenityLayer(parkingLots, 'parking_lot', 'Parkinzi', filter).then(a => {
+              parkingLots = a;
+            });
+          } else if (type == 'speed_bumper'){
+            createAmenityLayer(speedBumpers, 'speed_bumper', 'Lezeci policajci', filter).then(a => {
+              speedBumpers = a;
+            });
+          }
+    }
+
+    function populateDistanceAmenities(type, distance){
+      if(type == 'traffic_light'){
+            createAmenityLayer(trafficLights, 'traffic_light', 'Semafori', null, distance).then(a => {
+              trafficLights = a;
+            });
+          } else if (type == 'speed_control_camera'){
+            createAmenityLayer(speedCameras, 'speed_control_camera', 'Merenje brzine',null, distance).then(a => {
+              trafficLights = a;
+            });
+          } else if (type == 'police_patrol'){
+            createAmenityLayer(policePatrols, 'police_patrol', 'Policijske kontrole', null, distance).then(a => {
+              policePatrols = a;
+            });
+          } else if (type == 'parking_lot'){
+            createAmenityLayer(parkingLots, 'parking_lot', 'Parkinzi', null, distance).then(a => {
+              parkingLots = a;
+            });
+          } else if (type == 'speed_bumper'){
+            createAmenityLayer(speedBumpers, 'speed_bumper', 'Lezeci policajci', null, distance).then(a => {
+              speedBumpers = a;
+            });
+          }
+    }
+
+    function callApiAndSetLayer(url, latlng, successCallback, type) {
+      $.ajax({
+        url: url,
+        dataType: "json",
+        type: "GET",
+        success: function (data) {
+           successCallback(data, latlng, type)
+            }
+      });
+    }
+
+    function presentFeaturePopup(data, latlng) { 
+      if (data && data.features) {
+        data.features.forEach(feature => {
+          var message = Object.entries(feature.properties)
+            .filter(([name, value]) => value !== null)
+            .reduce(function (acc, [name, value]) {
+              return acc + ' ' + name + ': ' + value + '<br>';
+            }, '');
+          showPopup(message, latlng);
+        });
+
+      }
+    }
+
+    function showPopup(popupMessage, latlng) {
+      let popup = new L.Popup({
+        maxWidth: 300
+      });
+      popup.setContent(popupMessage);
+      popup.setLatLng(latlng);
+      map.openPopup(popup);
+    }
+
+    function markFeature(latlng, message, tt) {
+
+      let ico = icons.semafor;
+      if(tt == 'traffic_light'){
+        ico = icons.semafor;
+      } else if (tt == 'speed_control_camera'){
+        ico = icons.kamera;
+      } else if (tt == 'police_patrol'){
+        ico = icons.patrola;
+      } else if (tt == 'parking_lot'){
+        ico = icons.parking;
+      } else if (tt == 'speed_bumper'){
+        ico = icons.lezeci;
+      } else if (tt == 'police_station'){
+        ico = icons.policijskaStanica;
+      } else if (tt == 'speed_limit'){
+        ico = icons.ogranicenje;  
+      }
+      
+      var marker = L.marker(latlng, { icon: ico}).bindPopup(message).openPopup()
+      return marker;
+    }
+
+    function circlePopup(latlng, name, population) {
+      var radius = population / 50;
+      var circle = L.circle(latlng, {
+        color: 'red',
+        fillColor: 'red',
+        fillOpacity: 0.5,
+        radius: radius
+      });
+      circle.bindPopup(`City: ${name}<br>Population: ${population}`).openPopup()
+      return circle;
+    }
+
+  </script>
+</body>
+
+</html>
